@@ -1,12 +1,16 @@
 import { randomUUID } from 'node:crypto';
+import fsp from 'node:fs/promises';
+import path from 'node:path';
 import ExcelJS from 'exceljs';
 import {
   CAUSE, ISSUE_TYPE, OPEN_STATUSES, PRIORITY, RETEST_RESULT, SEVERITY, STATUS, TEST_TYPE, codeByLabel,
   type Cause, type IssueType, type Priority, type RetestResult, type Severity, type Status, type TestType,
 } from '../../shared/codes';
 import { formatDate, isValidDate, nowIso, today } from '../../shared/dates';
-import type { ImportPreview, ImportRow, Issue, User } from '../../shared/types';
+import type { Attachment, ImportPreview, ImportRow, Issue, User } from '../../shared/types';
+import { attachmentPath } from '../attachmentStore';
 import { Errors } from '../errors';
+import { logger } from '../logger';
 import { findUser, getConfig } from '../repository/configRepository';
 import { allIssues, formatId, issueStore } from '../repository/issueRepository';
 import { addHistory } from './common';
@@ -69,6 +73,30 @@ function styleHeader(ws: ExcelJS.Worksheet) {
 // 내보내기
 // ---------------------------------------------------------------------------
 
+/** 모든 첨부 이미지를 같은 크기(px)로 넣는다 */
+const IMAGE_WIDTH = 200;
+const IMAGE_HEIGHT = 150;
+const IMAGE_COLUMN_WIDTH = 29;
+const IMAGE_ROW_HEIGHT = IMAGE_HEIGHT * 0.75 + 4;
+
+const EMBEDDABLE_EXT: Record<string, 'png' | 'jpeg' | 'gif'> = { png: 'png', jpg: 'jpeg', jpeg: 'jpeg', gif: 'gif' };
+
+const fileExt = (a: Attachment) => path.extname(a.fileName).slice(1).toLowerCase();
+const isEmbeddableImage = (a: Attachment) => fileExt(a) in EMBEDDABLE_EXT;
+const imageExtension = (a: Attachment) => EMBEDDABLE_EXT[fileExt(a)];
+
+/** 이슈 본문 첨부, 재테스트 첨부 순서 */
+const allAttachments = (i: Issue) => [...i.attachments, ...i.retests.flatMap((r) => r.attachments)];
+
+async function readAttachment(issueId: string, a: Attachment): Promise<Buffer | null> {
+  try {
+    return await fsp.readFile(attachmentPath(issueId, a));
+  } catch {
+    logger.warn(`엑셀 내보내기: 첨부 실물 없음 ${issueId}/${a.fileName}`);
+    return null;
+  }
+}
+
 export function exportFileName(): string {
   const project = getConfig().project.name.replace(/[\\/:*?"<>|\s]+/g, '_');
   return `결함관리대장_${project}_${today().replaceAll('-', '')}.xlsx`;
@@ -82,7 +110,13 @@ export async function exportIssues(query: SearchQuery): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
   wb.created = new Date();
   const ws = wb.addWorksheet('결함관리대장');
-  ws.columns = COLUMNS.map(({ header, key, width }) => ({ header, key, width }));
+  const imageCount = Math.max(0, ...ordered.map((i) => allAttachments(i).filter(isEmbeddableImage).length));
+  ws.columns = [
+    ...COLUMNS.map(({ header, key, width }) => ({ header, key, width })),
+    { header: '첨부파일', key: 'files', width: 30 },
+    ...Array.from({ length: imageCount }, (_, n) => ({ header: `첨부이미지${n + 1}`, key: `image${n + 1}`, width: IMAGE_COLUMN_WIDTH })),
+  ];
+  const firstImageCol = COLUMNS.length + 1;
 
   for (const i of ordered) {
     const res = i.resolutions.at(-1);
@@ -119,6 +153,22 @@ export async function exportIssues(query: SearchQuery): Promise<Buffer> {
       overdue: late ? 'Y' : '',
       updatedAt: i.updatedAt,
     } satisfies Record<ColumnKey, unknown>);
+    const attachments = allAttachments(i);
+    const images = attachments.filter(isEmbeddableImage);
+    row.getCell('files').value = attachments.filter((a) => !isEmbeddableImage(a)).map((a) => a.fileName).join('\n');
+    let placed = 0;
+    for (const a of images) {
+      const buffer = await readAttachment(i.id, a);
+      if (!buffer) continue;
+      const imageId = wb.addImage({ buffer: buffer as unknown as ExcelJS.Buffer, extension: imageExtension(a) });
+      ws.addImage(imageId, {
+        tl: { col: firstImageCol + placed, row: row.number - 1 },
+        ext: { width: IMAGE_WIDTH, height: IMAGE_HEIGHT },
+        editAs: 'oneCell',
+      });
+      placed += 1;
+    }
+    if (placed > 0) row.height = IMAGE_ROW_HEIGHT;
     row.alignment = { vertical: 'top', wrapText: true };
     if (i.severity === 'CRITICAL') row.font = { color: { argb: 'FFC00000' } };
     if (late) {
@@ -126,7 +176,7 @@ export async function exportIssues(query: SearchQuery): Promise<Buffer> {
     }
   }
   styleHeader(ws);
-  ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: COLUMNS.length } };
+  ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: COLUMNS.length + 1 } };
 
   // 현황요약 시트
   const open = ordered.filter((i) => OPEN_STATUSES.includes(i.status)).length;

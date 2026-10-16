@@ -6,6 +6,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import { nowIso } from '../../shared/dates';
 import type { Attachment } from '../../shared/types';
+import { attachmentPath, safeFileName } from '../attachmentStore';
 import { Errors } from '../errors';
 import { userOf } from '../middleware/currentUser';
 import { ATTACHMENTS_DIR } from '../paths';
@@ -21,11 +22,6 @@ export function decodeFileName(name: string): string {
   return decoded.includes('\uFFFD') ? name : decoded;
 }
 
-function safeFileName(name: string): string {
-  const base = path.basename(name.replace(/\\/g, '/')).replace(/\.\.+/g, '.').replace(/[<>:"/\\|?*\x00-\x1f]/g, '_');
-  return base.slice(-150) || 'file';
-}
-
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: MAX_FILE_SIZE, files: MAX_FILES },
@@ -37,7 +33,7 @@ const upload = multer({
   },
 });
 
-const filePath = (issueId: string, a: Attachment) => path.join(ATTACHMENTS_DIR, issueId, `${a.id}_${safeFileName(a.fileName)}`);
+const filePath = attachmentPath;
 
 export const issueAttachmentsRouter = Router({ mergeParams: true });
 
