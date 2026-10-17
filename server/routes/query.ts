@@ -2,7 +2,7 @@ import type { Request } from 'express';
 import type { SearchQuery } from '../services/issueService';
 
 const KEYS: (keyof SearchQuery)[] = [
-  'testType', 'testRound', 'status', 'severity', 'issueType', 'module', 'assignee', 'reporter',
+  'testType', 'testRound', 'status', 'severity', 'issueType', 'module', 'assignee', 'reporter', 'testCaseId',
   'foundFrom', 'foundTo', 'overdue', 'q', 'sort', 'page', 'size',
 ];
 

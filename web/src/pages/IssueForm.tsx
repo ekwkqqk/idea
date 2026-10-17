@@ -7,7 +7,7 @@ import dayjs, { type Dayjs } from 'dayjs';
 import { ENVIRONMENT, ISSUE_TYPE, PRIORITY, SEVERITY, SEVERITY_GUIDE, TEST_TYPE, type Severity } from '@shared/codes';
 import { addDays, today } from '@shared/dates';
 import { ASSIGNEE_CHANGE_STATUSES } from '@shared/transitions';
-import type { Issue } from '@shared/types';
+import type { Issue, TestCase } from '@shared/types';
 import { api } from '../api';
 import { ApiError } from '../api/client';
 import { useApp } from '../store/user';
@@ -27,6 +27,10 @@ const formatSize = (n: number) => (n > 1024 * 1024 ? `${(n / 1024 / 1024).toFixe
 
 function toFormValues(issue: Issue): FormValues {
   return { ...issue, foundDate: dayjs(issue.foundDate), dueDate: dayjs(issue.dueDate) };
+}
+
+function testCaseSteps(tc: TestCase): string {
+  return tc.precondition ? `[사전조건]\n${tc.precondition}\n\n${tc.steps}` : tc.steps;
 }
 
 function toPayload(values: FormValues) {
@@ -53,8 +57,14 @@ export function IssueForm() {
   const draftAsked = useRef(false);
 
   const { data: issue, isLoading } = useQuery({ queryKey: ['issue', id], queryFn: () => api.issue(id!), enabled: isEdit });
+  const { data: testCases = [] } = useQuery({
+    queryKey: ['testcases', 'active-all'],
+    queryFn: () => api.testCases({ active: 'true', size: '5000' }),
+    select: (page) => page.items,
+  });
 
   const testType = Form.useWatch('testType', form);
+  const testCaseId = Form.useWatch('testCaseId', form);
   const severity = Form.useWatch('severity', form);
   const foundDate = Form.useWatch('foundDate', form);
   const dueDate = Form.useWatch('dueDate', form);
@@ -102,6 +112,12 @@ export function IssueForm() {
     return () => clearInterval(timer);
   }, [isEdit, form]);
 
+  useEffect(() => {
+    if (!testType || !testCaseId) return;
+    const tc = testCases.find((t) => t.id === testCaseId);
+    if (tc && tc.testType !== testType) form.setFieldValue('testCaseId', undefined);
+  }, [testType, testCaseId, testCases, form]);
+
   // 클립보드 이미지 붙여넣기
   useEffect(() => {
     if (isEdit) return;
@@ -126,6 +142,33 @@ export function IssueForm() {
   const assigneeEditable = isManager && (!isEdit || (issue && ASSIGNEE_CHANGE_STATUSES.includes(issue.status)));
   const autoDue = foundDate && severity ? addDays(foundDate.format('YYYY-MM-DD'), config.settings.dueDays[severity as Severity]) : null;
   const moduleManager = config.modules.find((m) => m.code === moduleCode)?.managerId;
+  const testCaseOptions = testCases
+    .filter((t) => t.testType === testType)
+    .map((t) => ({ value: t.id, label: `${t.id}  ${t.title}` }));
+  const unregisteredTestCase = isEdit && !!testCaseId && testCaseId === issue?.testCaseId
+    && !testCases.some((t) => t.id === testCaseId);
+
+  const applyTestCase = (tcId: string | undefined) => {
+    const tc = testCases.find((t) => t.id === tcId);
+    if (!tc) return;
+    const base: FormValues = { programId: tc.programId };
+    if (config.modules.some((m) => m.code === tc.module && m.active)) base.module = tc.module;
+    const filled = { steps: testCaseSteps(tc), expected: tc.expected };
+    const current = form.getFieldsValue(['steps', 'expected']) as FormValues;
+    const conflict = (['steps', 'expected'] as const).some((k) => current[k]?.trim() && current[k] !== filled[k]);
+    if (!conflict) {
+      form.setFieldsValue({ ...base, ...filled });
+      return;
+    }
+    form.setFieldsValue(base);
+    modal.confirm({
+      title: '재현 절차·기대 결과를 테스트케이스 내용으로 바꿀까요?',
+      content: '이미 입력한 재현 절차와 기대 결과가 있습니다.',
+      okText: '바꾸기',
+      cancelText: '유지',
+      onOk: () => form.setFieldsValue(filled),
+    });
+  };
 
   const submit = async () => {
     let values: FormValues;
@@ -232,8 +275,13 @@ export function IssueForm() {
             </Form.Item>
           </Col>
           <Col span={8}>
-            <Form.Item name="testCaseId" label="테스트케이스 ID" rules={[{ max: 50 }]}>
-              <Input placeholder="예: TC-UT-ORD-012" />
+            <Form.Item name="testCaseId" label="테스트케이스"
+              rules={[{ required: !isEdit || !!issue?.testCaseId, message: '필수 입력입니다.' }]}
+              extra={unregisteredTestCase
+                ? <Typography.Text type="warning">등록되지 않았거나 사용 안 함인 테스트케이스입니다.</Typography.Text>
+                : testCaseOptions.length === 0 ? '등록된 테스트케이스가 없습니다. 테스트케이스 메뉴에서 먼저 등록하세요.' : undefined}>
+              <Select showSearch allowClear optionFilterProp="label" placeholder="ID 또는 테스트명으로 검색"
+                options={testCaseOptions} onChange={applyTestCase} popupMatchSelectWidth={false} />
             </Form.Item>
           </Col>
         </Row>

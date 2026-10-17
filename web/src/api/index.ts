@@ -1,5 +1,7 @@
-import type { CreateIssueInput, PatchIssueInput, TransitionInput } from '@shared/schemas';
-import type { Config, ImportPreview, IssueDetail, IssueSummary, Page, Stats } from '@shared/types';
+import type {
+  CreateIssueInput, CreateTestCaseInput, PatchIssueInput, PatchTestCaseInput, TransitionInput,
+} from '@shared/schemas';
+import type { Config, ImportPreview, IssueDetail, IssueSummary, Page, Stats, TestCaseSummary } from '@shared/types';
 import { http, toQuery } from './client';
 
 export type IssueQuery = Record<string, string | undefined>;
@@ -42,5 +44,22 @@ export const api = {
     return http.upload<ImportPreview>('/api/import/preview', form);
   },
   importCommit: (importId: string, onExisting: 'SKIP' | 'OVERWRITE') =>
-    http.send<{ created: number; overwritten: number; skipped: number }>('POST', '/api/import/commit', { importId, onExisting }),
+    http.send<ImportResult>('POST', '/api/import/commit', { importId, onExisting }),
+
+  testCases: (q: IssueQuery) => http.get<Page<TestCaseSummary>>(`/api/testcases${toQuery(q)}`),
+  testCase: (id: string) => http.get<TestCaseSummary>(`/api/testcases/${encodeURIComponent(id)}`),
+  createTestCase: (input: Partial<CreateTestCaseInput>) => http.send<TestCaseSummary>('POST', '/api/testcases', input),
+  patchTestCase: (id: string, input: PatchTestCaseInput) =>
+    http.send<TestCaseSummary>('PATCH', `/api/testcases/${encodeURIComponent(id)}`, input),
+  deleteTestCase: (id: string) => http.send<void>('DELETE', `/api/testcases/${encodeURIComponent(id)}`),
+  downloadTestCaseTemplate: () => http.download('/api/testcases/import/template', '테스트케이스_가져오기양식.xlsx'),
+  testCaseImportPreview: (file: File) => {
+    const form = new FormData();
+    form.append('file', file, file.name);
+    return http.upload<ImportPreview>('/api/testcases/import/preview', form);
+  },
+  testCaseImportCommit: (importId: string, onExisting: 'SKIP' | 'OVERWRITE') =>
+    http.send<ImportResult>('POST', '/api/testcases/import/commit', { importId, onExisting }),
 };
+
+export type ImportResult = { created: number; overwritten: number; skipped: number };

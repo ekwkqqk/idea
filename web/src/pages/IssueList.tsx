@@ -1,4 +1,4 @@
-import { Alert, Button, Card, Checkbox, DatePicker, Input, Select, Space, Table, Typography } from 'antd';
+import { Alert, Button, Card, Checkbox, DatePicker, Input, Select, Space, Table, Tag, Typography } from 'antd';
 import type { ColumnsType, SorterResult } from 'antd/es/table/interface';
 import { DownloadOutlined, PlusOutlined } from '@ant-design/icons';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
@@ -12,7 +12,7 @@ import { useApp } from '../store/user';
 import { PriorityText, SeverityTag, StatusTag, TestTypeText, options } from '../components/tags';
 import { useApiError } from '../components/useApiError';
 
-const FILTER_KEYS = ['testType', 'testRound', 'status', 'severity', 'issueType', 'module', 'assignee', 'reporter', 'foundFrom', 'foundTo', 'overdue', 'q'] as const;
+const FILTER_KEYS = ['testType', 'testRound', 'status', 'severity', 'issueType', 'module', 'assignee', 'reporter', 'testCaseId', 'foundFrom', 'foundTo', 'overdue', 'q'] as const;
 type Filter = Partial<Record<(typeof FILTER_KEYS)[number], string>>;
 
 /** URL의 status가 없으면 미결, ALL이면 전체 */
@@ -147,7 +147,12 @@ export function IssueList() {
             <Checkbox checked={filter.overdue === 'true'} onChange={(e) => setFilter({ ...filter, overdue: e.target.checked ? 'true' : undefined })}>
               기한 초과만
             </Checkbox>
-            <Input.Search allowClear placeholder="ID, 제목, 재현 절차, 화면ID" style={{ width: 300 }} value={filter.q}
+            {filter.testCaseId && (
+              <Tag closable color="blue" onClose={() => apply({ ...filter, testCaseId: undefined })}>
+                테스트케이스: {filter.testCaseId}
+              </Tag>
+            )}
+            <Input.Search allowClear placeholder="ID, 제목, 재현 절차, 화면ID, 테스트케이스ID" style={{ width: 300 }} value={filter.q}
               onChange={(e) => setFilter({ ...filter, q: e.target.value })}
               onSearch={(v) => apply({ ...filter, q: v }, { sort: params.get('sort') ?? undefined, size: params.get('size') ?? undefined })} />
             <Button type="primary" onClick={() => apply(filter, { sort: params.get('sort') ?? undefined, size: params.get('size') ?? undefined })}>조회</Button>

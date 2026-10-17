@@ -5,6 +5,7 @@ import { Errors } from '../errors';
 import { requireManager } from '../middleware/currentUser';
 import { configStore, getConfig } from '../repository/configRepository';
 import { allIssues } from '../repository/issueRepository';
+import { allTestCases } from '../repository/testCaseRepository';
 
 export const configRouter = Router();
 
@@ -20,6 +21,10 @@ function usedReferences() {
     [i.reporter, i.assignee, i.createdBy, i.rejection?.rejectedBy,
       ...i.resolutions.map((r) => r.resolver), ...i.retests.map((r) => r.tester),
       ...i.comments.map((c) => c.author)].forEach((u) => u && users.add(u));
+  }
+  for (const t of allTestCases()) {
+    modules.add(t.module);
+    [t.owner, t.createdBy].forEach((u) => u && users.add(u));
   }
   return { users, modules };
 }
@@ -41,9 +46,9 @@ configRouter.put('/', requireManager, async (req, res) => {
 
   const { users, modules } = usedReferences();
   const removedUser = [...users].find((id) => !next.users.some((u) => u.id === id));
-  if (removedUser) throw Errors.configInUse(`사용자 '${removedUser}'는 이슈에서 사용 중이라 삭제할 수 없습니다. 사용 안 함으로 변경하세요.`);
+  if (removedUser) throw Errors.configInUse(`사용자 '${removedUser}'는 이슈·테스트케이스에서 사용 중이라 삭제할 수 없습니다. 사용 안 함으로 변경하세요.`);
   const removedModule = [...modules].find((code) => !next.modules.some((m) => m.code === code));
-  if (removedModule) throw Errors.configInUse(`모듈 '${removedModule}'는 이슈에서 사용 중이라 삭제할 수 없습니다. 사용 안 함으로 변경하세요.`);
+  if (removedModule) throw Errors.configInUse(`모듈 '${removedModule}'는 이슈·테스트케이스에서 사용 중이라 삭제할 수 없습니다. 사용 안 함으로 변경하세요.`);
   if (!next.users.some((u) => u.role === 'MANAGER' && u.active)) throw Errors.noActiveManager();
 
   await configStore.update((draft) => {

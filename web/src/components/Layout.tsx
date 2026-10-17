@@ -29,6 +29,7 @@ export function Layout() {
   const items = [
     { key: '/', label: <Link to="/">대시보드</Link> },
     { key: '/issues', label: <Link to="/issues">이슈 목록</Link> },
+    { key: '/testcases', label: <Link to="/testcases">테스트케이스</Link> },
     ...(isManager ? [{ key: '/import', label: <Link to="/import">가져오기</Link> }] : []),
     { key: '/settings', label: <Link to="/settings">설정</Link> },
   ];

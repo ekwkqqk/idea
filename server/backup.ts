@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { compactStamp } from '../shared/dates';
 import { logger } from './logger';
-import { BACKUP_DIR, CONFIG_FILE, ISSUES_FILE } from './paths';
+import { BACKUP_DIR, CONFIG_FILE, ISSUES_FILE, TESTCASES_FILE } from './paths';
 import { getConfig } from './repository/configRepository';
 
 export function runBackup() {
@@ -10,6 +10,7 @@ export function runBackup() {
     fs.mkdirSync(BACKUP_DIR, { recursive: true });
     const stamp = compactStamp();
     if (fs.existsSync(ISSUES_FILE)) fs.copyFileSync(ISSUES_FILE, path.join(BACKUP_DIR, `issues_${stamp}.json`));
+    if (fs.existsSync(TESTCASES_FILE)) fs.copyFileSync(TESTCASES_FILE, path.join(BACKUP_DIR, `testcases_${stamp}.json`));
     if (fs.existsSync(CONFIG_FILE)) fs.copyFileSync(CONFIG_FILE, path.join(BACKUP_DIR, `config_${stamp}.json`));
     pruneBackups(getConfig().settings.backupRetentionDays);
     logger.info(`백업 완료: ${stamp}`);

@@ -14,6 +14,8 @@ import { IssueForm } from './pages/IssueForm';
 import { IssueDetail } from './pages/IssueDetail';
 import { ImportPage } from './pages/Import';
 import { Settings } from './pages/Settings';
+import { TestCaseList } from './pages/TestCaseList';
+import { TestCaseImport } from './pages/TestCaseImport';
 
 dayjs.locale('ko');
 
@@ -41,6 +43,8 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
                   <Route path="/issues/new" element={<IssueForm />} />
                   <Route path="/issues/:id/edit" element={<IssueForm />} />
                   <Route path="/issues/:id" element={<IssueDetail />} />
+                  <Route path="/testcases" element={<TestCaseList />} />
+                  <Route path="/testcases/import" element={<TestCaseImport />} />
                   <Route path="/import" element={<ImportPage />} />
                   <Route path="/settings" element={<Settings />} />
                   <Route path="*" element={<Result status="404" title="페이지를 찾을 수 없습니다." />} />

@@ -6,7 +6,8 @@ SI 프로젝트의 단위테스트·통합테스트에서 발견된 이슈(결�
 
 | 기능 | 설명 |
 |---|---|
-| 이슈 등록 | 단위(UT)/통합(IT) 구분별 자동 채번(`UT-0001`), 심각도별 조치 기한 자동 계산, 스크린샷 붙여넣기(Ctrl+V) 첨부 |
+| 테스트케이스 | 단위/통합 테스트케이스 등록·수정, 엑셀 일괄 가져오기, 케이스별 연결 이슈 수(미결/전체) 확인 |
+| 이슈 등록 | 테스트케이스 선택 필수(모듈·화면ID·절차·기대결과 자동 채움), 단위(UT)/통합(IT) 구분별 자동 채번(`UT-0001`), 심각도별 조치 기한 자동 계산, 스크린샷 붙여넣기(Ctrl+V) 첨부 |
 | 목록/검색 | 상태·심각도·모듈·담당자·기간·키워드 검색, 빠른 필터(내 담당, 재테스트 대기, 기한 초과 등), 정렬·페이징 |
 | 상태 관리 | 신규 → 접수 → 조치중 → 조치완료 → 종료 흐름, 재테스트 Fail 시 자동 재오픈, 반려·이의 제기, PL/PM 강제 변경 |
 | 조치/재테스트 | 차수별 조치 내역(원인 분류, 조치 내용, 수정 대상), 재테스트 결과(Pass/Fail) 누적 기록 |
@@ -19,9 +20,9 @@ SI 프로젝트의 단위테스트·통합테스트에서 발견된 이슈(결�
 
 | 역할 | 할 수 있는 일 |
 |---|---|
-| 테스터 | 이슈 등록, 재테스트, 본인 발견 이슈 수정·이의 제기 |
+| 테스터 | 테스트케이스 등록·수정, 이슈 등록, 재테스트, 본인 발견 이슈 수정·이의 제기 |
 | 개발자 | 본인 담당 이슈 착수·조치 등록·조치완료 |
-| PL/PM | 담당자 지정·재지정, 반려, 재오픈, 강제 변경, 삭제, 엑셀 가져오기, 설정 변경 |
+| PL/PM | 담당자 지정·재지정, 반려, 재오픈, 강제 변경, 삭제, 테스트케이스 삭제, 엑셀 가져오기, 설정 변경 |
 
 로그인 없이 화면 상단에서 사용자를 선택하는 방식입니다. 역할 제한은 업무 실수 방지용이며 보안 통제 수단이 아니므로 **내부망에서만 사용**하세요.
 
@@ -29,7 +30,7 @@ SI 프로젝트의 단위테스트·통합테스트에서 발견된 이슈(결�
 
 - 서버: Node.js 20 이상, Express 5, exceljs, multer, zod
 - 화면: React 18, Vite, TypeScript, Ant Design, TanStack Query, Recharts
-- 저장소: JSON 파일 (`data/issues.json`, `data/config.json`)
+- 저장소: JSON 파일 (`data/issues.json`, `data/testcases.json`, `data/config.json`)
 
 ## 설치 및 실행
 
@@ -44,7 +45,7 @@ npm start
 npm run dev
 ```
 
-처음 실행하면 `data/` 폴더와 기본 설정이 생성되고 관리자 사용자(`u-admin`) 한 명만 등록되어 있습니다. 관리자로 접속해 **설정** 화면에서 사용자와 모듈을 먼저 등록하세요.
+처음 실행하면 `data/` 폴더와 기본 설정이 생성되고 관리자 사용자(`u-admin`) 한 명만 등록되어 있습니다. 관리자로 접속해 **설정** 화면에서 사용자와 모듈을 먼저 등록하고, **테스트케이스** 화면에서 테스트케이스를 등록(또는 엑셀로 가져오기)하세요. 이슈는 등록된 테스트케이스를 선택해야 등록할 수 있습니다.
 
 ### npm 스크립트
 
@@ -82,6 +83,7 @@ New-NetFirewallRule -DisplayName "TIMS 3000" -Direction Inbound -Protocol TCP -L
 | 경로 | 내용 |
 |---|---|
 | `data/issues.json` | 이슈 전체와 ID 채번 정보 |
+| `data/testcases.json` | 단위/통합 테스트케이스 목록 |
 | `data/config.json` | 프로젝트 정보, 사용자, 모듈, 기준값 |
 | `data/attachments/{이슈ID}/` | 첨부파일 실물 |
 | `data/backup/` | 자동 백업 (서버 시작 시 + 매일 00:00, 기본 30일 보관) |
@@ -95,7 +97,7 @@ New-NetFirewallRule -DisplayName "TIMS 3000" -Direction Inbound -Protocol TCP -L
 ### 복구
 
 1. 서버를 중지합니다.
-2. `data/backup/`에서 원하는 시점의 `issues_yyyyMMdd_HHmmss.json`을 `data/issues.json`으로 복사합니다(설정은 `config_...json` → `data/config.json`).
+2. `data/backup/`에서 원하는 시점의 `issues_yyyyMMdd_HHmmss.json`을 `data/issues.json`으로 복사합니다(테스트케이스는 `testcases_...json` → `data/testcases.json`, 설정은 `config_...json` → `data/config.json`).
 3. 서버를 다시 시작합니다.
 
 ## 폴더 구조
@@ -110,7 +112,7 @@ New-NetFirewallRule -DisplayName "TIMS 3000" -Direction Inbound -Protocol TCP -L
 │  ├─ repository/         JSON 파일 저장소 (원자적 쓰기, 쓰기 큐)
 │  └─ middleware/         사용자 식별, 오류 처리
 ├─ web/src/
-│  ├─ pages/              대시보드, 이슈 목록·등록·상세, 가져오기, 설정
+│  ├─ pages/              대시보드, 이슈 목록·등록·상세, 테스트케이스, 가져오기, 설정
 │  ├─ components/         공통 레이아웃, 태그, 오류 표시
 │  └─ api/                API 호출
 ├─ data/                  실행 시 생성 (git 제외)
@@ -134,6 +136,9 @@ New-NetFirewallRule -DisplayName "TIMS 3000" -Direction Inbound -Protocol TCP -L
 | GET | `/api/stats` | 대시보드 집계 |
 | GET | `/api/export` | 엑셀 내보내기 |
 | GET / POST | `/api/import/template`, `/api/import/preview`, `/api/import/commit` | 엑셀 가져오기 |
+| GET / POST | `/api/testcases` | 테스트케이스 검색 / 등록 |
+| GET / PATCH / DELETE | `/api/testcases/:id` | 테스트케이스 상세 / 수정 / 삭제 |
+| GET / POST | `/api/testcases/import/template`, `/api/testcases/import/preview`, `/api/testcases/import/commit` | 테스트케이스 엑셀 가져오기 |
 | GET / PUT | `/api/config` | 설정 조회 / 저장 |
 
 ## 문서

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { OPEN_STATUSES, type Status } from '../../shared/codes';
+import { OPEN_STATUSES, TEST_TYPE, type Status, type TestType } from '../../shared/codes';
 import { addDays, diffDays, nowIso, today } from '../../shared/dates';
 import type { CreateIssueInput, PatchIssueInput, ResolutionInput, RetestInput, TransitionInput } from '../../shared/schemas';
 import {
@@ -9,6 +9,7 @@ import type { Attachment, Issue, IssueDetail, IssueSummary, Page, User } from '.
 import { Errors, type ErrorDetail } from '../errors';
 import { findUser, getConfig } from '../repository/configRepository';
 import { allIssues, findInDraft, getIssue, issueStore, nextId } from '../repository/issueRepository';
+import { findTestCase } from '../repository/testCaseRepository';
 import { addHistory, checkVersion, touch } from './common';
 import { applyRetestResult, applyTransition, assertAssignable, autoStart } from './workflow';
 
@@ -25,6 +26,7 @@ export interface SearchQuery {
   module?: string;
   assignee?: string;
   reporter?: string;
+  testCaseId?: string;
   foundFrom?: string;
   foundTo?: string;
   overdue?: string;
@@ -65,11 +67,12 @@ export function filterIssues(query: SearchQuery): Issue[] {
     if (query.module && i.module !== query.module) return false;
     if (query.assignee && i.assignee !== query.assignee) return false;
     if (query.reporter && i.reporter !== query.reporter) return false;
+    if (query.testCaseId && i.testCaseId !== query.testCaseId) return false;
     if (query.foundFrom && i.foundDate < query.foundFrom) return false;
     if (query.foundTo && i.foundDate > query.foundTo) return false;
     if (query.overdue === 'true' && !isOverdue(i, base)) return false;
     if (keyword) {
-      const hay = `${i.id}\n${i.title}\n${i.steps}\n${i.programId}`.toLowerCase();
+      const hay = `${i.id}\n${i.title}\n${i.steps}\n${i.programId}\n${i.testCaseId}`.toLowerCase();
       if (!hay.includes(keyword)) return false;
     }
     return true;
@@ -144,12 +147,26 @@ type RefFields = Partial<{
   testRound: string | null;
   foundDate: string;
   dueDate: string | null;
+  testCaseId: string;
 }>;
 
+/** 등록된 사용 중 테스트케이스이고 이슈의 테스트구분과 같아야 한다 */
+export function testCaseError(testCaseId: string, testType: TestType): string | null {
+  const tc = findTestCase(testCaseId);
+  if (!tc) return `테스트케이스 '${testCaseId}'가 등록되어 있지 않습니다.`;
+  if (!tc.active) return `테스트케이스 '${testCaseId}'는 사용 안 함 상태입니다.`;
+  if (tc.testType !== testType) return `테스트케이스 '${testCaseId}'의 테스트구분(${TEST_TYPE[tc.testType]})이 이슈와 다릅니다.`;
+  return null;
+}
+
 /** 설정값 참조와 날짜 규칙 검증. fields에는 새로 입력된 값만 넣는다 */
-function validateRefs(fields: RefFields, merged: { foundDate: string; dueDate: string | null }) {
+function validateRefs(fields: RefFields, merged: { foundDate: string; dueDate: string | null; testType: TestType }) {
   const cfg = getConfig();
   const details: ErrorDetail[] = [];
+  if (fields.testCaseId !== undefined) {
+    const message = testCaseError(fields.testCaseId, merged.testType);
+    if (message) details.push({ field: 'testCaseId', message });
+  }
   if (fields.module !== undefined && !cfg.modules.some((m) => m.code === fields.module && m.active)) {
     details.push({ field: 'module', message: '사용 중인 모듈이 아닙니다.' });
   }
@@ -252,6 +269,7 @@ export async function patchIssue(id: string, input: PatchIssueInput, user: User)
     validateRefs(changes, {
       foundDate: changes.foundDate ?? target.foundDate,
       dueDate: changes.dueDate ?? target.dueDate,
+      testType: target.testType,
     });
 
     for (const [field, to] of Object.entries(changes)) {

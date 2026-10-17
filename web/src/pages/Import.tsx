@@ -4,12 +4,48 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import type { ImportPreview } from '@shared/types';
-import { api } from '../api';
+import { api, type ImportResult } from '../api';
 import { ApiError } from '../api/client';
 import { useApp } from '../store/user';
 import { useApiError } from '../components/useApiError';
 
-export function ImportPage() {
+interface ImportTarget {
+  downloadTemplate: () => Promise<void>;
+  preview: (file: File) => Promise<ImportPreview>;
+  commit: (importId: string, onExisting: 'SKIP' | 'OVERWRITE') => Promise<ImportResult>;
+  invalidate: string[];
+  idLabel: string;
+  existingLabel: string;
+  templateHint: string;
+  listLabel: string;
+  listPath: string;
+}
+
+const ISSUE_IMPORT: ImportTarget = {
+  downloadTemplate: api.downloadTemplate,
+  preview: api.importPreview,
+  commit: api.importCommit,
+  invalidate: ['issues', 'stats', 'testcases'],
+  idLabel: '이슈ID',
+  existingLabel: '기존 이슈',
+  templateHint: '기존 결함관리대장의 머리글을 양식과 같게 맞추면 열 순서가 달라도 가져올 수 있습니다. 테스트케이스ID는 먼저 등록되어 있어야 합니다.',
+  listLabel: '이슈 목록 보기',
+  listPath: '/issues?status=ALL',
+};
+
+export const TEST_CASE_IMPORT: ImportTarget = {
+  downloadTemplate: api.downloadTestCaseTemplate,
+  preview: api.testCaseImportPreview,
+  commit: api.testCaseImportCommit,
+  invalidate: ['testcases'],
+  idLabel: '테스트케이스ID',
+  existingLabel: '기존 테스트케이스',
+  templateHint: '기존 테스트케이스 대장의 머리글을 양식과 같게 맞추면 열 순서가 달라도 가져올 수 있습니다.',
+  listLabel: '테스트케이스 목록 보기',
+  listPath: '/testcases',
+};
+
+export function ImportPage({ target = ISSUE_IMPORT }: { target?: ImportTarget }) {
   const { isManager } = useApp();
   const { modal, message } = App.useApp();
   const navigate = useNavigate();
@@ -20,7 +56,7 @@ export function ImportPage() {
   const [errorsOnly, setErrorsOnly] = useState(false);
   const [onExisting, setOnExisting] = useState<'SKIP' | 'OVERWRITE'>('SKIP');
   const [loading, setLoading] = useState(false);
-  const [done, setDone] = useState<{ created: number; overwritten: number; skipped: number } | null>(null);
+  const [done, setDone] = useState<ImportResult | null>(null);
 
   if (!isManager) return <Result status="403" title="PL/PM만 사용할 수 있는 화면입니다." />;
 
@@ -28,7 +64,7 @@ export function ImportPage() {
     if (!file) return;
     setLoading(true);
     try {
-      setPreview(await api.importPreview(file));
+      setPreview(await target.preview(file));
       setDone(null);
     } catch (err) {
       onError(err);
@@ -43,17 +79,16 @@ export function ImportPage() {
     modal.confirm({
       title: `${count}건을 등록합니다`,
       content: onExisting === 'OVERWRITE' && preview.summary.existing
-        ? `기존 이슈 ${preview.summary.existing}건은 엑셀 값으로 덮어씁니다.` : undefined,
+        ? `${target.existingLabel} ${preview.summary.existing}건은 엑셀 값으로 덮어씁니다.` : undefined,
       okText: '등록',
       cancelText: '취소',
       onOk: async () => {
         try {
-          const result = await api.importCommit(preview.importId, onExisting);
+          const result = await target.commit(preview.importId, onExisting);
           setDone(result);
           setPreview(null);
           setFile(null);
-          queryClient.invalidateQueries({ queryKey: ['issues'] });
-          queryClient.invalidateQueries({ queryKey: ['stats'] });
+          target.invalidate.forEach((key) => queryClient.invalidateQueries({ queryKey: [key] }));
         } catch (err) {
           if (err instanceof ApiError && err.code === 'NOT_FOUND') message.error('검증 후 10분이 지났습니다. 다시 검증하세요.');
           else onError(err);
@@ -68,8 +103,8 @@ export function ImportPage() {
     <Space direction="vertical" size="middle" style={{ width: '100%', maxWidth: 1100, margin: '0 auto', display: 'flex' }}>
       <Card size="small" title="1. 양식 다운로드">
         <Space>
-          <Button icon={<DownloadOutlined />} onClick={() => api.downloadTemplate().catch(onError)}>가져오기 양식 받기</Button>
-          <Typography.Text type="secondary">기존 결함관리대장의 머리글을 양식과 같게 맞추면 열 순서가 달라도 가져올 수 있습니다.</Typography.Text>
+          <Button icon={<DownloadOutlined />} onClick={() => target.downloadTemplate().catch(onError)}>가져오기 양식 받기</Button>
+          <Typography.Text type="secondary">{target.templateHint}</Typography.Text>
         </Space>
       </Card>
 
@@ -87,7 +122,7 @@ export function ImportPage() {
       {done && (
         <Result status="success" title="가져오기를 완료했습니다."
           subTitle={`등록 ${done.created}건, 덮어쓰기 ${done.overwritten}건, 건너뛰기 ${done.skipped}건`}
-          extra={<Button type="primary" onClick={() => navigate('/issues?status=ALL')}>이슈 목록 보기</Button>} />
+          extra={<Button type="primary" onClick={() => navigate(target.listPath)}>{target.listLabel}</Button>} />
       )}
 
       {preview && (
@@ -104,7 +139,7 @@ export function ImportPage() {
               columns={[
                 { title: '행', dataIndex: 'row', width: 60 },
                 { title: '결과', dataIndex: 'status', width: 80, render: (v) => <Tag color={v === 'OK' ? 'green' : 'red'}>{v === 'OK' ? '정상' : '오류'}</Tag> },
-                { title: '이슈ID', dataIndex: 'id', width: 100, render: (v, r) => <>{v ?? '(신규)'}{r.exists && <Tag style={{ marginLeft: 4 }}>기존</Tag>}</> },
+                { title: target.idLabel, dataIndex: 'id', width: 140, render: (v, r) => <>{v ?? '(신규)'}{r.exists && <Tag style={{ marginLeft: 4 }}>기존</Tag>}</> },
                 { title: '제목', dataIndex: 'title', ellipsis: true },
                 { title: '오류 내용', dataIndex: 'errors', render: (v?: string[]) => v?.map((e) => <div key={e} style={{ color: '#cf1322' }}>{e}</div>) },
               ]} />

@@ -14,7 +14,9 @@ import { logger } from '../logger';
 import { findUser, getConfig } from '../repository/configRepository';
 import { allIssues, formatId, issueStore } from '../repository/issueRepository';
 import { addHistory } from './common';
-import { defaultDueDate, elapsedDays, filterIssues, isOverdue, sortSummaries, toSummary, type SearchQuery } from './issueService';
+import {
+  defaultDueDate, elapsedDays, filterIssues, isOverdue, sortSummaries, testCaseError, toSummary, type SearchQuery,
+} from './issueService';
 
 // ---------------------------------------------------------------------------
 // 컬럼 정의 (상세설계서 2.7)
@@ -58,7 +60,7 @@ const IMPORT_COLUMNS = COLUMNS.filter((c) => !('exportOnly' in c));
 const userName = (id: string | null | undefined) => (id ? findUser(id)?.name ?? id : '');
 const moduleName = (code: string) => getConfig().modules.find((m) => m.code === code)?.name ?? code;
 
-function styleHeader(ws: ExcelJS.Worksheet) {
+export function styleHeader(ws: ExcelJS.Worksheet) {
   const header = ws.getRow(1);
   header.font = { bold: true };
   header.alignment = { vertical: 'middle', horizontal: 'center' };
@@ -217,6 +219,7 @@ export async function importTemplate(): Promise<Buffer> {
   [
     ['이슈ID', '비워 두면 새로 채번합니다. 입력 시 UT-0001 / IT-0001 형식'],
     ['테스트구분*', '단위 / 통합'],
+    ['테스트케이스ID*', '테스트케이스 화면에 등록된 ID(테스트구분이 같아야 함). 등록되지 않은 케이스는 테스트케이스 가져오기로 먼저 등록하세요.'],
     ['테스트차수', cfg.project.testRounds.join(' / ')],
     ['이슈유형', `${Object.values(ISSUE_TYPE).join(' / ')} (비우면 결함)`],
     ['업무(모듈)*', cfg.modules.filter((m) => m.active).map((m) => `${m.name}(${m.code})`).join(', ')],
@@ -276,7 +279,7 @@ function purgePreviews() {
   for (const [key, entry] of previews) if (entry.createdAt < limit) previews.delete(key);
 }
 
-function cellText(value: ExcelJS.CellValue): string {
+export function cellText(value: ExcelJS.CellValue): string {
   if (value === null || value === undefined) return '';
   if (value instanceof Date) return formatDate(new Date(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()));
   if (typeof value === 'object') {
@@ -302,7 +305,7 @@ function cellDate(value: ExcelJS.CellValue): string | null | 'INVALID' {
   return isValidDate(normalized) ? normalized : 'INVALID';
 }
 
-function userIdByName(name: string, errors: string[], label: string): string | null {
+export function userIdByName(name: string, errors: string[], label: string): string | null {
   if (!name) return null;
   const users = getConfig().users;
   const byId = users.find((u) => u.id === name);
@@ -358,6 +361,12 @@ function parseRow(get: (key: ColumnKey) => ExcelJS.CellValue): { data?: ImportDa
   if (!moduleText) errors.push('업무(모듈)은(는) 필수입니다.');
   else if (!mod) errors.push(`업무(모듈) '${moduleText}'이(가) 설정에 없습니다.`);
 
+  const testCaseId = required('testCaseId', '테스트케이스ID', 50);
+  if (testCaseId && testType) {
+    const message = testCaseError(testCaseId, testType);
+    if (message) errors.push(message);
+  }
+
   const title = required('title', '제목', 200);
   const steps = required('steps', '재현절차', 4000);
   const expected = required('expected', '기대결과', 2000);
@@ -411,7 +420,7 @@ function parseRow(get: (key: ColumnKey) => ExcelJS.CellValue): { data?: ImportDa
       issueType: issueType ?? 'DEFECT',
       module: mod.code,
       programId: text('programId').slice(0, 50),
-      testCaseId: text('testCaseId').slice(0, 50),
+      testCaseId,
       title,
       steps,
       expected,
@@ -429,8 +438,7 @@ function parseRow(get: (key: ColumnKey) => ExcelJS.CellValue): { data?: ImportDa
   };
 }
 
-export async function previewImport(buffer: Buffer, user: User): Promise<ImportPreview> {
-  purgePreviews();
+export async function firstWorksheet(buffer: Buffer): Promise<ExcelJS.Worksheet> {
   const wb = new ExcelJS.Workbook();
   try {
     await wb.xlsx.load(buffer as unknown as ExcelJS.Buffer);
@@ -439,11 +447,17 @@ export async function previewImport(buffer: Buffer, user: User): Promise<ImportP
   }
   const ws = wb.worksheets[0];
   if (!ws) throw Errors.validation([], '시트가 없는 파일입니다.');
+  return ws;
+}
+
+export async function previewImport(buffer: Buffer, user: User): Promise<ImportPreview> {
+  purgePreviews();
+  const ws = await firstWorksheet(buffer);
 
   const headerIndex = new Map<string, number>();
   ws.getRow(1).eachCell((cell, col) => headerIndex.set(cellText(cell.value).replace(/\*$/, ''), col));
   const missing = IMPORT_COLUMNS.filter((c) => !headerIndex.has(c.header)).map((c) => c.header);
-  const requiredHeaders = ['테스트구분', '업무(모듈)', '제목', '재현절차', '기대결과', '실제결과', '심각도', '발견자', '발견일'];
+  const requiredHeaders = ['테스트구분', '테스트케이스ID', '업무(모듈)', '제목', '재현절차', '기대결과', '실제결과', '심각도', '발견자', '발견일'];
   const missingRequired = missing.filter((h) => requiredHeaders.includes(h));
   if (missingRequired.length) {
     throw Errors.validation([], `필수 컬럼이 없습니다: ${missingRequired.join(', ')}. 가져오기 양식을 사용하세요.`);

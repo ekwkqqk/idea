@@ -16,7 +16,7 @@ export const issueFields = {
   issueType: z.enum(keysOf(ISSUE_TYPE)).default('DEFECT'),
   module: z.string({ required_error: REQUIRED }).trim().min(1, REQUIRED),
   programId: opt(50),
-  testCaseId: opt(50),
+  testCaseId: req(50),
   title: req(200),
   steps: req(4000),
   expected: req(2000),
@@ -41,7 +41,7 @@ const patchableFields = z.object({
   issueType: z.enum(keysOf(ISSUE_TYPE)),
   module: z.string().trim().min(1, REQUIRED),
   programId: z.string().trim().max(50, '50자 이하로 입력하세요.'),
-  testCaseId: z.string().trim().max(50, '50자 이하로 입력하세요.'),
+  testCaseId: req(50),
   title: req(200),
   steps: req(4000),
   expected: req(2000),
@@ -106,6 +106,43 @@ export const retestSchema = z.object({
   message: 'Fail이면 확인 의견을 입력하세요.',
 });
 export type RetestInput = z.infer<typeof retestSchema>;
+
+export const TEST_CASE_ID_PATTERN = /^[A-Za-z0-9_-]{1,50}$/;
+
+const testCaseFields = {
+  testType: z.enum(keysOf(TEST_TYPE), { required_error: REQUIRED }),
+  module: z.string({ required_error: REQUIRED }).trim().min(1, REQUIRED),
+  programId: opt(50),
+  title: req(200),
+  precondition: opt(2000),
+  steps: req(4000),
+  expected: req(2000),
+  owner: z.string().trim().min(1).nullable().default(null),
+  active: z.boolean().default(true),
+};
+
+export const createTestCaseSchema = z.object({
+  id: z.string({ required_error: REQUIRED }).trim()
+    .regex(TEST_CASE_ID_PATTERN, '테스트케이스 ID는 영문·숫자·-·_ 50자 이하입니다.'),
+  ...testCaseFields,
+}).strict();
+export type CreateTestCaseInput = z.infer<typeof createTestCaseSchema>;
+
+export const patchTestCaseSchema = z.object({
+  version: z.number().int(),
+  changes: z.object({
+    testType: testCaseFields.testType,
+    module: testCaseFields.module,
+    programId: z.string().trim().max(50, '50자 이하로 입력하세요.'),
+    title: testCaseFields.title,
+    precondition: z.string().trim().max(2000, '2000자 이하로 입력하세요.'),
+    steps: testCaseFields.steps,
+    expected: testCaseFields.expected,
+    owner: z.string().trim().min(1).nullable(),
+    active: z.boolean(),
+  }).partial().strict(),
+}).strict();
+export type PatchTestCaseInput = z.infer<typeof patchTestCaseSchema>;
 
 export const commentSchema = z.object({ body: req(2000) }).strict();
 

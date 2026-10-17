@@ -105,6 +105,30 @@ export interface IssuesFile {
   issues: Issue[];
 }
 
+export interface TestCase {
+  id: string;
+  testType: TestType;
+  module: string;
+  programId: string;
+  title: string;
+  precondition: string;
+  steps: string;
+  expected: string;
+  owner: string | null;
+  active: boolean;
+  createdAt: string;
+  createdBy: string;
+  updatedAt: string;
+  version: number;
+}
+
+export interface TestCasesFile {
+  schemaVersion: number;
+  testCases: TestCase[];
+}
+
+export type TestCaseSummary = TestCase & { issueCount: number; openIssueCount: number };
+
 export interface User {
   id: string;
   name: string;

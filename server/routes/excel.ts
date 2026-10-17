@@ -10,13 +10,13 @@ import { searchQuery } from './query';
 
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
-function sendXlsx(res: Response, fileName: string, buffer: Buffer) {
+export function sendXlsx(res: Response, fileName: string, buffer: Buffer) {
   res.attachment(fileName);
   res.type(XLSX_MIME);
   res.send(buffer);
 }
 
-const upload = multer({
+export const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 20 * 1024 * 1024, files: 1 },
   fileFilter: (_req, file, cb) => {
@@ -41,7 +41,7 @@ excelRouter.post('/import/preview', requireManager, upload.single('file'), async
   res.json(await previewImport(req.file.buffer, userOf(req)));
 });
 
-const commitSchema = z.object({ importId: z.string().min(1), onExisting: z.enum(['SKIP', 'OVERWRITE']) });
+export const commitSchema = z.object({ importId: z.string().min(1), onExisting: z.enum(['SKIP', 'OVERWRITE']) });
 
 excelRouter.post('/import/commit', requireManager, async (req, res) => {
   const { importId, onExisting } = commitSchema.parse(req.body);
